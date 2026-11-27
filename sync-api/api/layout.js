@@ -3,11 +3,89 @@ import { get, put, BlobNotFoundError } from '@vercel/blob';
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_ITEMS = 500;
 const MAX_SAVED_LAYOUTS = 50;
+const MAX_HISTORY_VERSIONS = 30;
+const MAX_HISTORY_BYTES = 1500 * 1024;
+const MIN_SAME_CLIENT_SNAPSHOT_MS = 20000;
 
 const ROOM_PATHS = {
   default: 'apartment-studio/layout.json',
   verify: 'apartment-studio/verify.json',
 };
+
+const HISTORY_PATHS = {
+  default: 'apartment-studio/history.json',
+  verify: 'apartment-studio/verify-history.json',
+};
+
+async function readJsonBlobOrNull(blobPathname) {
+  try {
+    const result = await get(blobPathname, { access: 'private', useCache: false });
+    if (!result || result.statusCode === 304 || !result.stream) return null;
+    const text = await new Response(result.stream).text();
+    return JSON.parse(text);
+  } catch (err) {
+    if (err instanceof BlobNotFoundError) return null;
+    return null;
+  }
+}
+
+async function readHistoryArray(historyPathname) {
+  const doc = await readJsonBlobOrNull(historyPathname);
+  return Array.isArray(doc?.versions) ? doc.versions : [];
+}
+
+function layoutCoreSig(doc) {
+  return JSON.stringify({
+    ceiling_ft: doc?.ceiling_ft ?? null,
+    items: Array.isArray(doc?.items) ? doc.items : [],
+  });
+}
+
+async function maybeSnapshotPreviousVersion(pathname, historyPathname, nextClean, forceSnapshot) {
+  try {
+    const prev = await readJsonBlobOrNull(pathname);
+    if (!prev || !Array.isArray(prev.items)) return undefined;
+    if (layoutCoreSig(prev) === layoutCoreSig(nextClean)) return undefined;
+
+    const versions = await readHistoryArray(historyPathname);
+    const latest = versions[0];
+    if (!forceSnapshot && latest) {
+      const samePrevAsLatest = layoutCoreSig(latest) === layoutCoreSig(prev);
+      const sameClientBurst = Boolean(latest.clientId)
+        && latest.clientId === prev.clientId
+        && latest.itemCount === prev.items.length
+        && Math.abs((Date.parse(prev.savedAt) || 0) - (Date.parse(latest.savedAt) || 0)) < MIN_SAME_CLIENT_SNAPSHOT_MS;
+      if (samePrevAsLatest || sameClientBurst) {
+        return versions.length;
+      }
+    }
+
+    const snapshot = {
+      id: `ver_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      savedAt: prev.savedAt || new Date().toISOString(),
+      ceiling_ft: prev.ceiling_ft ?? null,
+      itemCount: prev.items.length,
+      clientId: prev.clientId || '',
+      items: prev.items,
+    };
+    versions.unshift(snapshot);
+    if (versions.length > MAX_HISTORY_VERSIONS) {
+      versions.length = MAX_HISTORY_VERSIONS;
+    }
+    while (versions.length > 1 && Buffer.byteLength(JSON.stringify({ versions }), 'utf8') > MAX_HISTORY_BYTES) {
+      versions.pop();
+    }
+    await put(historyPathname, JSON.stringify({ versions }), {
+      access: 'private',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/json',
+    });
+    return versions.length;
+  } catch (_) {
+    return undefined;
+  }
+}
 
 function getAllowedOrigin(origin) {
   if (!origin || typeof origin !== 'string') return null;
@@ -208,11 +286,50 @@ export default async function handler(req, res) {
   const reqUrl = new URL(req.url, 'http://localhost');
   const room = reqUrl.searchParams.get('room') || 'default';
   const pathname = Object.prototype.hasOwnProperty.call(ROOM_PATHS, room) ? ROOM_PATHS[room] : null;
-  if (!pathname) {
+  const historyPathname = Object.prototype.hasOwnProperty.call(HISTORY_PATHS, room) ? HISTORY_PATHS[room] : null;
+  if (!pathname || !historyPathname) {
     return sendJson(res, 400, { error: 'Invalid room parameter' });
   }
 
   if (req.method === 'GET') {
+    if (reqUrl.searchParams.get('history') === '1') {
+      try {
+        const versions = await readHistoryArray(historyPathname);
+        return sendJson(res, 200, {
+          versions: versions.map(({ id, savedAt, ceiling_ft, itemCount }) => ({
+            id,
+            savedAt,
+            ceiling_ft: ceiling_ft ?? null,
+            itemCount,
+          })),
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: err?.message || 'Failed to read version history' });
+      }
+    }
+
+    const reqVersionId = reqUrl.searchParams.get('versionId');
+    if (reqVersionId) {
+      try {
+        const versions = await readHistoryArray(historyPathname);
+        const found = versions.find((v) => v && v.id === reqVersionId);
+        if (!found) {
+          return sendJson(res, 404, { error: 'Version not found' });
+        }
+        return sendJson(res, 200, {
+          version: {
+            id: found.id,
+            savedAt: found.savedAt,
+            ceiling_ft: found.ceiling_ft ?? null,
+            itemCount: found.itemCount,
+            items: found.items,
+          },
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: err?.message || 'Failed to read saved version' });
+      }
+    }
+
     try {
       const queryIfNoneMatch = reqUrl.searchParams.get('ifNoneMatch') || '';
       const headerIfNoneMatch = typeof req.headers['if-none-match'] === 'string'
@@ -272,6 +389,8 @@ export default async function handler(req, res) {
     }
 
     try {
+      const forceSnapshot = reqUrl.searchParams.get('forceSnapshot') === '1';
+      const versionCount = await maybeSnapshotPreviousVersion(pathname, historyPathname, clean, forceSnapshot);
       const result = await put(pathname, JSON.stringify(clean), {
         access: 'private',
         addRandomSuffix: false,
@@ -285,6 +404,7 @@ export default async function handler(req, res) {
         ok: true,
         savedAt: clean.savedAt,
         etag: result.etag || null,
+        versionCount: typeof versionCount === 'number' ? versionCount : null,
       });
     } catch (err) {
       return sendJson(res, 500, { error: err?.message || 'Failed to save layout' });

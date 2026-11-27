@@ -5,18 +5,19 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
 const FT_TO_M = 0.3048;
 const IN_TO_M = 0.0254;
-const STORAGE_KEY = 'apt_studio_layout_v1';
-const SAVED_LAYOUTS_KEY = 'apt_studio_saved_layouts_v1';
-const LEIF_LIVING_MIGRATED_KEY = 'apt_studio_leif_living_v1';
-const CLOUD_SYNC_ENABLED_KEY = 'apt_studio_cloud_sync_enabled_v1';
-const CLOUD_SYNC_BASE_URL = 'https://apartment-studio-sync.vercel.app/api/layout';
 const URL_PARAMS = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
 const SYNC_ROOM_PARAM = URL_PARAMS.get('syncRoom') === 'verify' ? 'verify' : '';
 const DISABLE_CLOUD_SYNC_PARAM = URL_PARAMS.get('nosync') === '1';
+const ROOM_KEY_SUFFIX = SYNC_ROOM_PARAM ? `_room_${SYNC_ROOM_PARAM}` : '';
+const STORAGE_KEY = `apt_studio_layout_v1${ROOM_KEY_SUFFIX}`;
+const SAVED_LAYOUTS_KEY = `apt_studio_saved_layouts_v1${ROOM_KEY_SUFFIX}`;
+const LEIF_LIVING_MIGRATED_KEY = `apt_studio_leif_living_v1${ROOM_KEY_SUFFIX}`;
+const CLOUD_SYNC_ENABLED_KEY = `apt_studio_cloud_sync_enabled_v1${ROOM_KEY_SUFFIX}`;
+const CLOUD_SYNC_BASE_URL = 'https://apartment-studio-sync.vercel.app/api/layout';
 const CLIENT_ID = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
   ? crypto.randomUUID()
   : `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-const SYNC_CHANNEL_NAME = 'apt_studio_sync_v1';
+const SYNC_CHANNEL_NAME = `apt_studio_sync_v1${ROOM_KEY_SUFFIX}`;
 const IDB_NAME = 'apt_studio_handles_v1';
 const IDB_STORE = 'handles';
 const IDB_FILE_KEY = 'syncFile';
@@ -1866,12 +1867,14 @@ let fileObserver = null;
 let cloudPushTimer = null;
 let cloudPushInFlight = false;
 let cloudPushQueued = false;
+let cloudForceSnapshotQueued = false;
 let cloudPullInFlight = false;
 let cloudPollTimer = null;
 let lastCloudEtag = null;
 let lastCloudSyncOk = true;
 let lastCloudSyncError = '';
 let isCloudSyncing = false;
+let historyFetchSeq = 0;
 
 let lastAppliedSyncTs = 0;
 let lastAppliedSignature = '';
@@ -1898,10 +1901,17 @@ function isCloudSyncActive() {
   }
 }
 
-function getCloudSyncUrl() {
-  return SYNC_ROOM_PARAM
-    ? `${CLOUD_SYNC_BASE_URL}?room=${encodeURIComponent(SYNC_ROOM_PARAM)}`
-    : CLOUD_SYNC_BASE_URL;
+function getCloudSyncUrl(extraParams = null) {
+  const url = new URL(CLOUD_SYNC_BASE_URL);
+  if (SYNC_ROOM_PARAM) url.searchParams.set('room', SYNC_ROOM_PARAM);
+  if (extraParams && typeof extraParams === 'object') {
+    for (const [k, v] of Object.entries(extraParams)) {
+      if (v !== undefined && v !== null && v !== '') {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+  return url.toString();
 }
 
 function formatTimeShort(iso) {
@@ -2776,7 +2786,7 @@ async function initStoredFileHandle() {
 }
 
 // Layer 3: Cloud Sync (Vercel Blob API)
-async function pushCloudLayoutNow({ keepalive = false } = {}) {
+async function pushCloudLayoutNow({ keepalive = false, forceSnapshot = false } = {}) {
   if (!isCloudSyncActive()) return false;
   if (cloudPushTimer) {
     clearTimeout(cloudPushTimer);
@@ -2784,6 +2794,7 @@ async function pushCloudLayoutNow({ keepalive = false } = {}) {
   }
   if (cloudPushInFlight) {
     cloudPushQueued = true;
+    if (forceSnapshot) cloudForceSnapshotQueued = true;
     return false;
   }
   cloudPushInFlight = true;
@@ -2793,7 +2804,8 @@ async function pushCloudLayoutNow({ keepalive = false } = {}) {
     const payload = buildSyncSnapshot(lastAutoSaveIso || new Date().toISOString());
     const bodyStr = JSON.stringify(payload);
     const useKeepalive = Boolean(keepalive && bodyStr.length <= 60000);
-    const res = await fetch(getCloudSyncUrl(), {
+    const putUrl = forceSnapshot ? getCloudSyncUrl({ forceSnapshot: '1' }) : getCloudSyncUrl();
+    const res = await fetch(putUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: bodyStr,
@@ -2816,18 +2828,20 @@ async function pushCloudLayoutNow({ keepalive = false } = {}) {
     isCloudSyncing = false;
     updateAutoSaveUI({ ok: lastAutoSaveOk, savedAt: lastAutoSaveIso, errorMsg: lastAutoSaveError });
     if (cloudPushQueued) {
+      const nextForce = cloudForceSnapshotQueued;
       cloudPushQueued = false;
-      scheduleCloudPush(250);
+      cloudForceSnapshotQueued = false;
+      scheduleCloudPush(250, nextForce);
     }
   }
 }
 
-function scheduleCloudPush(delayMs = 1000) {
+function scheduleCloudPush(delayMs = 1000, forceSnapshot = false) {
   if (!isCloudSyncActive()) return;
   if (cloudPushTimer) clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(() => {
     cloudPushTimer = null;
-    pushCloudLayoutNow();
+    pushCloudLayoutNow({ forceSnapshot });
   }, delayMs);
 }
 
@@ -2841,10 +2855,9 @@ async function pullCloudLayout({ initial = false, force = false } = {}) {
     updateAutoSaveUI({ ok: lastAutoSaveOk, savedAt: lastAutoSaveIso, errorMsg: lastAutoSaveError });
   }
   try {
-    const baseUrl = getCloudSyncUrl();
     const fetchUrl = (!initial && !force && lastCloudEtag)
-      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}ifNoneMatch=${encodeURIComponent(lastCloudEtag)}`
-      : baseUrl;
+      ? getCloudSyncUrl({ ifNoneMatch: lastCloudEtag })
+      : getCloudSyncUrl();
     const res = await fetch(fetchUrl, {
       method: 'GET',
       cache: 'no-store',
@@ -3803,10 +3816,12 @@ document.getElementById('btn-redo').addEventListener('click', (e) => {
 document.getElementById('btn-preset-starter').addEventListener('click', () => {
   pushUndoState('Load Starter Layout');
   loadLayoutArray(STARTER_LAYOUT);
+  pushCloudLayoutNow({ forceSnapshot: true });
 });
 document.getElementById('btn-clear-all').addEventListener('click', () => {
   if (placedItems.length > 0) pushUndoState('Clear all furniture');
   loadLayoutArray([]);
+  pushCloudLayoutNow({ forceSnapshot: true });
 });
 document.getElementById('btn-measure').addEventListener('click', () => setMeasureMode(!measureMode));
 document.getElementById('btn-clear-measure').addEventListener('click', () => {
@@ -3948,6 +3963,15 @@ function formatDefaultLayoutName() {
   return `Layout ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatLayoutSummaryMeta(count, ceilingFt, savedAt = null) {
+  const ceilStr = Number.isFinite(Number(ceilingFt)) ? `${Number(ceilingFt)}'-0"` : "9'-0\"";
+  let dateStr = '';
+  if (savedAt && !Number.isNaN(Date.parse(savedAt))) {
+    dateStr = ` · ${new Date(savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return `${count} ${count === 1 ? 'item' : 'items'} · ${ceilStr} ceiling${dateStr}`;
+}
+
 function renderSavedLayoutsList() {
   const host = document.getElementById('saved-layouts-list');
   const list = readSavedLayouts();
@@ -3975,15 +3999,9 @@ function renderSavedLayoutsList() {
     title.textContent = layout.name || 'Untitled Layout';
 
     const count = Array.isArray(layout.items) ? layout.items.length : 0;
-    const ceilStr = Number.isFinite(Number(layout.ceiling_ft)) ? `${Number(layout.ceiling_ft)}'-0"` : "9'-0\"";
-    let dateStr = '';
-    if (layout.savedAt && !Number.isNaN(Date.parse(layout.savedAt))) {
-      dateStr = ` · ${new Date(layout.savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-    }
-
     const info = document.createElement('div');
     info.className = 'saved-layout-info';
-    info.textContent = `${count} ${count === 1 ? 'item' : 'items'} · ${ceilStr} ceiling${dateStr}`;
+    info.textContent = formatLayoutSummaryMeta(count, layout.ceiling_ft, layout.savedAt);
 
     meta.appendChild(title);
     meta.appendChild(info);
@@ -4057,6 +4075,183 @@ function renderSavedLayoutsList() {
   }
 }
 
+function renderVersionHistoryRows(versions, { loading = false, errorMsg = '' } = {}) {
+  const host = document.getElementById('version-history-list');
+  const countEl = document.getElementById('version-history-count');
+  if (!host || !countEl) return;
+
+  host.textContent = '';
+  if (loading) {
+    countEl.textContent = '…';
+    const msg = document.createElement('div');
+    msg.style.color = 'var(--text-muted)';
+    msg.style.fontSize = '12px';
+    msg.textContent = 'Loading cloud version history…';
+    host.appendChild(msg);
+    return;
+  }
+
+  if (errorMsg) {
+    countEl.textContent = '0';
+    const msg = document.createElement('div');
+    msg.style.color = 'var(--warn)';
+    msg.style.fontSize = '12px';
+    msg.textContent = errorMsg;
+    host.appendChild(msg);
+    return;
+  }
+
+  const list = Array.isArray(versions) ? versions : [];
+  countEl.textContent = String(list.length);
+
+  if (list.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.color = 'var(--text-muted)';
+    empty.style.fontSize = '12px';
+    empty.textContent = 'No automatic cloud snapshots yet. Earlier states appear here automatically as edits sync.';
+    host.appendChild(empty);
+    return;
+  }
+
+  list.forEach((ver, idx) => {
+    const row = document.createElement('div');
+    row.className = 'saved-layout-row';
+
+    const meta = document.createElement('div');
+    meta.className = 'saved-layout-meta';
+
+    const title = document.createElement('div');
+    title.className = 'saved-layout-name';
+    let label = 'Cloud Snapshot';
+    if (ver.savedAt && !Number.isNaN(Date.parse(ver.savedAt))) {
+      label = new Date(ver.savedAt).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+    title.textContent = idx === 0 ? `${label} (Previous)` : label;
+
+    const count = Number.isFinite(Number(ver.itemCount)) ? Number(ver.itemCount) : 0;
+    const info = document.createElement('div');
+    info.className = 'saved-layout-info';
+    info.textContent = formatLayoutSummaryMeta(count, ver.ceiling_ft);
+
+    meta.appendChild(title);
+    meta.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'saved-layout-actions';
+
+    const btnRestore = document.createElement('button');
+    btnRestore.type = 'button';
+    btnRestore.className = 'primary';
+    btnRestore.textContent = 'Restore';
+    btnRestore.addEventListener('click', async () => {
+      btnRestore.disabled = true;
+      try {
+        await restoreCloudVersion(ver);
+      } finally {
+        btnRestore.disabled = false;
+      }
+    });
+
+    const btnExport = document.createElement('button');
+    btnExport.type = 'button';
+    btnExport.textContent = 'Export';
+    btnExport.addEventListener('click', async () => {
+      btnExport.disabled = true;
+      try {
+        await exportCloudVersion(ver);
+      } finally {
+        btnExport.disabled = false;
+      }
+    });
+
+    actions.appendChild(btnRestore);
+    actions.appendChild(btnExport);
+    row.appendChild(meta);
+    row.appendChild(actions);
+    host.appendChild(row);
+  });
+}
+
+async function fetchCloudVersionHistory() {
+  const section = document.getElementById('version-history-section');
+  if (!section) return;
+  if (!isCloudSyncSupported()) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  const seq = ++historyFetchSeq;
+  renderVersionHistoryRows([], { loading: true });
+  try {
+    const res = await fetch(getCloudSyncUrl({ history: '1' }), {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (seq !== historyFetchSeq) return;
+    renderVersionHistoryRows(Array.isArray(data?.versions) ? data.versions : []);
+  } catch (err) {
+    if (seq !== historyFetchSeq) return;
+    renderVersionHistoryRows([], { errorMsg: `Could not load cloud history: ${err?.message || 'Network error'}` });
+  }
+}
+
+async function restoreCloudVersion(versionMeta) {
+  try {
+    showLayoutModalStatus('Loading saved version…');
+    const res = await fetch(getCloudSyncUrl({ versionId: versionMeta.id }), {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data?.version) throw new Error('Version data missing');
+    const normalized = validateAndNormalizeLayout(data.version);
+    pushUndoState('Restore saved version');
+    loadLayoutArray(normalized.items, { save: false, migrate: false });
+    if (normalized.ceilingFt !== null) {
+      applyCeilingHeight(normalized.ceilingFt, false);
+    }
+    saveToLocalStorage();
+    await pushCloudLayoutNow({ forceSnapshot: true });
+    await fetchCloudVersionHistory();
+    const msg = `Restored version (${normalized.items.length} ${normalized.items.length === 1 ? 'item' : 'items'})`;
+    showLayoutModalStatus(msg);
+    showHudMessage(msg);
+  } catch (err) {
+    showLayoutModalStatus(`Failed to restore version: ${err?.message || 'Unknown error'}`, true);
+  }
+}
+
+async function exportCloudVersion(versionMeta) {
+  try {
+    const res = await fetch(getCloudSyncUrl({ versionId: versionMeta.id }), {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data?.version) throw new Error('Version data missing');
+    const stamp = (versionMeta.savedAt || '').slice(0, 19).replace(/[:T]/g, '-');
+    const resSave = await saveLayoutToFile(
+      data.version,
+      `apartment_layout_${stamp || versionMeta.id}.json`
+    );
+    if (resSave.saved) {
+      showLayoutModalStatus(`Exported snapshot to ${resSave.filename}`);
+    }
+  } catch (err) {
+    showLayoutModalStatus(`Failed to export version: ${err?.message || 'Unknown error'}`, true);
+  }
+}
+
 function saveCurrentAsNamedLayout(rawName) {
   const name = rawName.trim() || formatDefaultLayoutName();
   const payload = {
@@ -4084,10 +4279,12 @@ function openLayoutsModal() {
   updateAutoSaveUI({ ok: lastAutoSaveOk, savedAt: lastAutoSaveIso, errorMsg: lastAutoSaveError });
   showLayoutModalStatus('');
   layoutsDialog.showModal();
+  fetchCloudVersionHistory();
 }
 
 document.getElementById('btn-open-layouts').addEventListener('click', openLayoutsModal);
 document.getElementById('btn-autosave').addEventListener('click', openLayoutsModal);
+document.getElementById('btn-refresh-history').addEventListener('click', fetchCloudVersionHistory);
 
 document.getElementById('btn-cloud-sync-now').addEventListener('click', async () => {
   if (!isCloudSyncSupported()) {
