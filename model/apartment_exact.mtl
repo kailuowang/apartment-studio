@@ -1,0 +1,72 @@
+# Apartment Materials
+newmtl WallPlaster
+Kd 0.9400 0.9300 0.9000
+Ka 0.2350 0.2325 0.2250
+d 1.0000
+illum 2
+
+newmtl HardwoodFloor
+Kd 0.7600 0.6200 0.4500
+Ka 0.1900 0.1550 0.1125
+d 1.0000
+illum 2
+
+newmtl CeramicTile
+Kd 0.8500 0.8700 0.8800
+Ka 0.2125 0.2175 0.2200
+d 1.0000
+illum 2
+
+newmtl BalconyConcrete
+Kd 0.6400 0.6500 0.6600
+Ka 0.1600 0.1625 0.1650
+d 1.0000
+illum 2
+
+newmtl WindowFrame
+Kd 0.1600 0.1800 0.2100
+Ka 0.0400 0.0450 0.0525
+d 1.0000
+illum 2
+
+newmtl GlassPane
+Kd 0.5500 0.8200 0.9200
+Ka 0.1375 0.2050 0.2300
+d 0.3200
+illum 2
+
+newmtl DoorWood
+Kd 0.8200 0.7700 0.7000
+Ka 0.2050 0.1925 0.1750
+d 1.0000
+illum 2
+
+newmtl CabinetWood
+Kd 0.6200 0.5000 0.3700
+Ka 0.1550 0.1250 0.0925
+d 1.0000
+illum 2
+
+newmtl CounterStone
+Kd 0.9200 0.9200 0.9100
+Ka 0.2300 0.2300 0.2275
+d 1.0000
+illum 2
+
+newmtl BrushedSteel
+Kd 0.7400 0.7600 0.7800
+Ka 0.1850 0.1900 0.1950
+d 1.0000
+illum 2
+
+newmtl PorcelainWhite
+Kd 0.9700 0.9700 0.9800
+Ka 0.2425 0.2425 0.2450
+d 1.0000
+illum 2
+
+newmtl DarkMetal
+Kd 0.1800 0.1900 0.2100
+Ka 0.0450 0.0475 0.0525
+d 1.0000
+illum 2

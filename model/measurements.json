@@ -1,0 +1,18 @@
+{
+  "notes": "Field measurements from floorplan_marked.jpeg applied at 12.5 px/ft.",
+  "kitchen_north_wall_width_in": 101,
+  "kitchen_island_length_in": 70,
+  "kitchen_sink_west_wall_length_in": 110,
+  "dining_west_wall_length_in": 203,
+  "primary_bath_north_wall_from_west_ext_in": 79,
+  "primary_bed_wic_north_wall_in": 90,
+  "primary_bed_west_wall_to_sw_col_in": 181,
+  "primary_bed_sw_column_width_in": 21,
+  "dining_builtin_shelf": {
+    "enabled": true,
+    "floor_to_ceiling": true,
+    "depth_in": 13.5,
+    "bays": 3,
+    "shelf_heights_ft": [1.75, 3.15, 4.55, 5.95, 7.35]
+  }
+}

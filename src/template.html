@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exact 3D Apartment &amp; Furniture Arrangement Studio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --brand-color: #38bdf8;
+      --bg-app: #0b1120;
+      --bg-panel: #111827;
+      --bg-card: #1e293b;
+      --bg-hover: #283548;
+      --border: #334155;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --warn: #f87171;
+      --ok: #34d399;
+      --amber: #fbbf24;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-app);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      font-size: 13px;
+      accent-color: var(--brand-color);
+    }
+
+    #app {
+      display: grid;
+      grid-template-columns: 300px 1fr 292px;
+      grid-template-rows: auto 1fr;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Top Header Bar */
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      min-height: 48px;
+      padding: 6px 14px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    button, select, input[type="text"], input[type="number"] {
+      font-family: inherit;
+      font-size: 12px;
+      color: var(--text-main);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 9px;
+    }
+
+    button {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.14s, border-color 0.14s;
+    }
+    button:hover { background: var(--bg-hover); border-color: #475569; }
+    button.primary {
+      background: #0284c7;
+      border-color: #0ea5e9;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    button.primary:hover { background: #0369a1; }
+    button.active {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--brand-color);
+      color: #7dd3fc;
+    }
+    button.danger {
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, 0.45);
+      background: rgba(239, 68, 68, 0.14);
+    }
+    button.danger:hover { background: rgba(239, 68, 68, 0.26); }
+    button[aria-disabled="true"] {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+    button[aria-disabled="true"]:hover {
+      background: var(--bg-card);
+      border-color: var(--border);
+    }
+    button:focus-visible, select:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .autosave-pill {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--ok);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      font-variant-numeric: tabular-nums;
+      min-block-size: 24px;
+    }
+    .autosave-pill:hover {
+      background: rgba(52, 211, 153, 0.2);
+      border-color: rgba(52, 211, 153, 0.55);
+    }
+    .autosave-pill.syncing {
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+    .autosave-pill.warn {
+      background: rgba(248, 113, 113, 0.14);
+      color: var(--warn);
+      border-color: rgba(248, 113, 113, 0.45);
+    }
+    .autosave-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .autosave-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      font-size: 12px;
+    }
+    .sr-only:where(:not(:focus-within, :active)) {
+      position: absolute !important;
+      clip-path: inset(50%) !important;
+      overflow: hidden !important;
+      width: 1px !important;
+      height: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    /* Sidebars */
+    aside {
+      background: var(--bg-panel);
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #left-panel { border-right: 1px solid var(--border); }
+    #right-panel { border-left: 1px solid var(--border); }
+
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 5px;
+    }
+    .camera-grid button {
+      justify-content: center;
+      padding: 6px 6px;
+      font-size: 11.5px;
+    }
+
+    .cat-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .cat-tabs button {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 999px;
+    }
+
+    .catalog-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    .catalog-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 9px;
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-align: left;
+      width: 100%;
+    }
+    .catalog-item:hover {
+      border-color: var(--brand-color);
+      background: rgba(56, 189, 248, 0.08);
+    }
+    .catalog-item .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .catalog-item .name { font-weight: 600; font-size: 12px; color: var(--text-main); }
+    .catalog-item .dims { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .catalog-item .add-tag {
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* Viewport */
+    #viewport-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 35%, #172033 0%, #090e1a 100%);
+    }
+    #canvas-host {
+      width: 100%;
+      height: 100%;
+    }
+    #labels-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 5;
+    }
+    .room-label {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 6px;
+      padding: 3px 7px;
+      text-align: center;
+      white-space: nowrap;
+      backdrop-filter: blur(2px);
+    }
+    .room-label .rl-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #f8fafc;
+      line-height: 1.2;
+    }
+    .room-label .rl-dims {
+      font-size: 10px;
+      color: #7dd3fc;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+    }
+    .measure-pin {
+      position: absolute;
+      transform: translate(-50%, -120%);
+      background: #f59e0b;
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #hud-status {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      background: rgba(15, 23, 42, 0.84);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      z-index: 10;
+      pointer-events: none;
+      max-width: 560px;
+      line-height: 1.4;
+      backdrop-filter: blur(4px);
+    }
+    #hud-status strong { color: var(--text-main); }
+
+    #hud-walk {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(2, 132, 199, 0.9);
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 600;
+      z-index: 10;
+      display: none;
+    }
+
+    /* Forms & Controls */
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .control-row:last-child { margin-bottom: 0; }
+    .control-row label {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .range-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 9px;
+    }
+    .range-row:last-child { margin-bottom: 0; }
+    .range-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .range-header span:last-child {
+      color: var(--text-main);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+    input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 0;
+      cursor: pointer;
+      color: var(--text-main);
+      font-size: 12px;
+      user-select: none;
+    }
+    .check-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .dims-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .field span {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .field input {
+      width: 100%;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .swatch-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 6px 0;
+    }
+    .swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      padding: 0;
+      cursor: pointer;
+    }
+    .swatch.selected {
+      border-color: #ffffff;
+      box-shadow: 0 0 0 2px var(--brand-color);
+    }
+
+    .clearance-box {
+      font-size: 11.5px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .clearance-box .warn {
+      grid-column: 1 / -1;
+      color: var(--warn);
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .clearance-box .ok {
+      grid-column: 1 / -1;
+      color: var(--ok);
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .placed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 210px;
+      overflow-y: auto;
+    }
+    .placed-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      background: rgba(15, 23, 42, 0.5);
+      font-size: 11.5px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+    }
+    .placed-item:hover { background: var(--bg-hover); }
+    .placed-item.selected {
+      border-color: var(--brand-color);
+      background: rgba(56, 189, 248, 0.14);
+    }
+
+    /* Native Modal Dialogs (Modern Web Guidance compliant) */
+    dialog:modal {
+      overscroll-behavior: contain;
+      background: var(--bg-panel);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      width: min(560px, 92vw);
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+    }
+    dialog[open] {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    dialog::backdrop {
+      background-color: rgba(2, 6, 23, 0.72);
+      backdrop-filter: blur(3px);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+    dialog h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    table.dims-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    table.dims-table th, table.dims-table td {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.dims-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    textarea {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11.5px;
+      color: var(--text-main);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      width: 100%;
+      resize: vertical;
+    }
+    .layout-save-row {
+      display: flex;
+      gap: 8px;
+    }
+    .saved-layouts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .saved-layout-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .saved-layout-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .saved-layout-name {
+      font-weight: 600;
+      font-size: 12.5px;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .saved-layout-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .saved-layout-actions {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .layout-status {
+      font-size: 12px;
+      min-height: 18px;
+      color: var(--text-muted);
+    }
+    .layout-status.ok { color: var(--ok); }
+    .layout-status.err { color: var(--warn); }
+    .layout-io-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    details.paste-box {
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 9px;
+    }
+
+    /* Brand-consistent form fallback for browsers without accent-color support */
+    @supports not (accent-color: var(--brand-color)) {
+      input[type="checkbox"].visually-hidden {
+        position: absolute !important;
+        clip-path: inset(50%) !important;
+        overflow: hidden !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: -1px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        white-space: nowrap !important;
+      }
+      label.check-row {
+        position: relative;
+        padding-left: 24px;
+      }
+      input[type="checkbox"].visually-hidden + span::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 15px;
+        height: 15px;
+        border: 2px solid #475569;
+        background: #0f172a;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      input[type="checkbox"].visually-hidden:focus-visible + span::before {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+      }
+      input[type="checkbox"].visually-hidden:checked + span::before {
+        background-color: var(--brand-color, #38bdf8);
+        border-color: var(--brand-color, #38bdf8);
+      }
+      input[type="checkbox"].visually-hidden:checked + span::after {
+        content: "✓";
+        position: absolute;
+        left: 3px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #0b1120;
+        font-weight: 800;
+        font-size: 11px;
+      }
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 6px;
+        background: linear-gradient(to right, var(--brand-color, #38bdf8) var(--progress, 50%), #334155 var(--progress, 50%));
+        border-radius: 3px;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 14px;
+        width: 14px;
+        border-radius: 50%;
+        background: var(--brand-color, #38bdf8);
+        margin-top: -4px;
+      }
+      input[type="range"]::-moz-range-track {
+        width: 100%;
+        height: 6px;
+        background: #334155;
+        border-radius: 3px;
+      }
+      input[type="range"]::-moz-range-thumb {
+        height: 14px;
+        width: 14px;
+        border-radius: 50%;
+        background: var(--brand-color, #38bdf8);
+        border: none;
+      }
+      input[type="range"]::-moz-range-progress {
+        background-color: var(--brand-color, #38bdf8);
+        height: 6px;
+        border-radius: 3px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">
+        <h1>Exact 3D Apartment Studio</h1>
+        <span class="pill" id="area-pill">2,114 sq ft · 4BR / 3BA</span>
+        <button type="button" id="btn-autosave" class="autosave-pill" title="Layout changes auto-save automatically in this browser. Click to manage auto-save and saved layouts.">
+          <span class="autosave-dot" aria-hidden="true"></span>
+          <span id="autosave-text">Auto-saved</span>
+        </button>
+        <button type="button" id="btn-reconnect-file" class="autosave-pill" style="display:none;" title="Reconnect your previously linked local JSON sync file">Reconnect File</button>
+      </div>
+
+      <div class="toolbar">
+        <button type="button" id="btn-undo" aria-disabled="true" title="Undo (Ctrl/Cmd+Z)">Undo</button>
+        <button type="button" id="btn-redo" aria-disabled="true" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>
+        <button type="button" id="btn-preset-starter" title="Load sample collision-free arrangement">Starter Layout</button>
+        <button type="button" id="btn-clear-all" title="Remove all furniture">Empty</button>
+        <button type="button" id="btn-measure" title="Tape measure tool (M)">Measure (M)</button>
+        <button type="button" id="btn-clear-measure" title="Clear pinned tape measures">Clear Pins</button>
+        <button type="button" id="btn-open-dims">Room Specs</button>
+        <button type="button" id="btn-open-layouts" title="Save, load, and manage named furniture layouts">Layouts</button>
+        <button type="button" id="btn-save-json">Save JSON</button>
+        <button type="button" id="btn-load-json">Load JSON</button>
+        <input type="file" id="file-load-json" accept=".json" hidden />
+        <button type="button" class="primary" id="btn-export-glb">Export 3D (.glb)</button>
+        <button type="button" id="btn-download-base-glb" title="Download bare apartment_exact.glb">Base .glb</button>
+      </div>
+    </header>
+
+    <!-- Left Panel: Camera + Architecture + Furniture Catalog -->
+    <aside id="left-panel">
+      <div class="card">
+        <div class="section-title">Camera Views</div>
+        <div class="camera-grid">
+          <button type="button" class="cam-btn active" data-cam="dollhouse">3D Dollhouse</button>
+          <button type="button" class="cam-btn" data-cam="top2d">2D Blueprint</button>
+          <button type="button" class="cam-btn" data-cam="living">Living + Dining</button>
+          <button type="button" class="cam-btn" data-cam="kitchen">Kitchen</button>
+          <button type="button" class="cam-btn" data-cam="primary">Primary Suite</button>
+          <button type="button" class="cam-btn" data-cam="ne">NE Suite</button>
+          <button type="button" class="cam-btn" data-cam="south">South Beds</button>
+          <button type="button" class="cam-btn" data-cam="walk">Walkthrough 5'6"</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <span>Furniture Library</span>
+          <button type="button" id="btn-open-custom">+ Custom</button>
+        </div>
+        <div class="cat-tabs" id="cat-tabs"></div>
+        <div class="catalog-list" id="catalog-list"></div>
+      </div>
+    </aside>
+
+    <!-- Center 3D Canvas -->
+    <main id="viewport-wrap">
+      <div id="canvas-host"></div>
+      <div id="labels-layer"></div>
+      <div id="hud-walk">Walkthrough Mode (5'-6" eye height) · WASD / Arrows to move · Drag to look · Click floor to step</div>
+      <div id="hud-status">
+        <strong>Controls:</strong> Drag to orbit · Scroll to zoom · <strong>Double-click</strong> furniture to select, then drag to move · <strong>Esc</strong> deselect · <strong>⌘/Ctrl+Z</strong> undo · <strong>R</strong> rotate 90° · <strong>D</strong> duplicate · <strong>M</strong> tape measure · <strong>Del</strong> remove
+      </div>
+    </main>
+
+    <!-- Right Panel: Architecture Layers + Selected Item Inspector -->
+    <aside id="right-panel">
+      <div class="card">
+        <div class="section-title">
+          <span>Architecture &amp; Scale</span>
+          <select id="unit-select" aria-label="Display units">
+            <option value="imperial">ft / in</option>
+            <option value="metric">m / cm</option>
+          </select>
+        </div>
+
+        <div class="control-row">
+          <label for="ceiling-select">Ceiling Height</label>
+          <select id="ceiling-select">
+            <option value="8">8'-0" (2.44 m)</option>
+            <option value="9" selected>9'-0" (2.74 m)</option>
+            <option value="10">10'-0" (3.05 m)</option>
+            <option value="11">11'-0" (3.35 m)</option>
+            <option value="12">12'-0" (3.66 m)</option>
+          </select>
+        </div>
+
+        <div class="range-row">
+          <div class="range-header">
+            <label for="cutaway-slider">Wall Cutaway Slice</label>
+            <span id="cutaway-val">9'-0"</span>
+          </div>
+          <input id="cutaway-slider" type="range" min="1.5" max="12" step="0.25" value="9" />
+        </div>
+
+        <div class="range-row">
+          <div class="range-header">
+            <label for="overlay-slider">Floorplan Blueprint Opacity</label>
+            <span id="overlay-val">0%</span>
+          </div>
+          <input id="overlay-slider" type="range" min="0" max="100" step="5" value="0" />
+        </div>
+
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-swings" checked /><span>Door Swing Arcs</span></label>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-labels" checked /><span>Room Labels &amp; Sizes</span></label>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-grid" checked /><span>1-Foot Floor Grid</span></label>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-fixtures" checked /><span>Kitchen &amp; Bath Fixtures</span></label>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-doors" checked /><span>3D Doors</span></label>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Placement Snapping</div>
+        <div class="control-row">
+          <label for="snap-grid-select">Grid Snap</label>
+          <select id="snap-grid-select">
+            <option value="0">Off (Free)</option>
+            <option value="3" selected>3 inches</option>
+            <option value="6">6 inches</option>
+            <option value="12">12 inches</option>
+          </select>
+        </div>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-wall-snap" checked /><span>Magnetic Wall Snap</span></label>
+      </div>
+
+      <div class="card" id="inspector-card">
+        <div class="section-title">
+          <span>Selected Furniture</span>
+          <span id="sel-dims-readout" style="color:var(--accent);font-weight:600">None</span>
+        </div>
+        <div id="inspector-empty" style="color:var(--text-muted);font-size:12px;">
+          Double-click any furniture piece in the 3D view (or pick from Placed Items / add from the library) to edit size, rotation, color, and check wall clearances.
+        </div>
+        <div id="inspector-body" style="display:none;flex-direction:column;gap:8px;">
+          <div style="font-weight:600;font-size:13px;" id="sel-name">Sofa</div>
+          <div class="dims-grid">
+            <label class="field"><span>Width (in)</span><input type="number" id="inp-w" min="6" max="240" step="any" /></label>
+            <label class="field"><span>Depth (in)</span><input type="number" id="inp-d" min="6" max="240" step="any" /></label>
+            <label class="field"><span>Height (in)</span><input type="number" id="inp-h" min="1" max="144" step="any" /></label>
+          </div>
+          <div class="range-row">
+            <div class="range-header">
+              <label for="inp-rot">Rotation</label>
+              <span id="rot-val">0°</span>
+            </div>
+            <input type="range" id="inp-rot" min="0" max="359" step="1" value="0" />
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button type="button" id="btn-rot-m45" style="flex:1;justify-content:center;">-45°</button>
+            <button type="button" id="btn-rot-p45" style="flex:1;justify-content:center;">+45°</button>
+            <button type="button" id="btn-rot-p90" style="flex:1;justify-content:center;">+90°</button>
+          </div>
+          <button type="button" id="btn-mirror-item" style="display:none;justify-content:center;">Mirror L-Shape (F)</button>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Color Finish</div>
+            <div class="swatch-row" id="swatch-row"></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Wall Clearances &amp; Collisions</div>
+            <div class="clearance-box" id="clearance-box"></div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:2px;">
+            <button type="button" id="btn-dup-item" style="flex:1;justify-content:center;">Duplicate (D)</button>
+            <button type="button" class="danger" id="btn-del-item" style="flex:1;justify-content:center;">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <span>Placed Items</span>
+          <span id="placed-count">0</span>
+        </div>
+        <div class="placed-list" id="placed-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Native Modal Dialogs (Modern Web Guidance compliant: no role="dialog" or aria-modal) -->
+  <dialog id="custom-item-dialog" closedby="any" aria-labelledby="custom-item-title">
+    <h2 id="custom-item-title">Add Custom Furniture Piece</h2>
+    <form method="dialog" id="custom-item-form" style="display:flex;flex-direction:column;gap:10px;">
+      <label class="field">
+        <span>Item Name</span>
+        <input type="text" id="custom-name" value="Custom Table" required autofocus />
+      </label>
+      <div class="dims-grid">
+        <label class="field"><span>Width (in)</span><input type="number" id="custom-w" min="6" max="240" step="any" value="60" required /></label>
+        <label class="field"><span>Depth (in)</span><input type="number" id="custom-d" min="6" max="240" step="any" value="30" required /></label>
+        <label class="field"><span>Height (in)</span><input type="number" id="custom-h" min="1" max="120" step="any" value="30" required /></label>
+      </div>
+      <div class="control-row">
+        <label for="custom-shape">Mesh Style</label>
+        <select id="custom-shape">
+          <option value="table">Table / Surface with Legs</option>
+          <option value="marble_coffee_table">Marble Top Coffee Table</option>
+          <option value="sofa">Upholstered Seat / Cushion</option>
+          <option value="sectional">L-Sectional Sofa (Right)</option>
+          <option value="sectional_left">L-Sectional Sofa (Left)</option>
+          <option value="leif_modular_4pc">Leif 4-Piece Curved Sectional (Right)</option>
+          <option value="leif_modular_4pc_left">Leif 4-Piece Curved Sectional (Left)</option>
+          <option value="leif_wedge">Leif Curved Wedge</option>
+          <option value="leif_arm_chair_right">Leif Right-Arm Chair</option>
+          <option value="leif_arm_chair_left">Leif Left-Arm Chair</option>
+          <option value="leif_armless">Leif Armless Single</option>
+          <option value="leif_ottoman">Leif Ottoman</option>
+          <option value="cabinet">Cabinet / Credenza</option>
+          <option value="floor_speaker">Standing Tower Speaker</option>
+          <option value="bed">Bed Frame + Mattress</option>
+          <option value="baby_grand">Baby Grand Piano</option>
+          <option value="rug">Flat Rug</option>
+          <option value="combs_bistro_table">Combs Marble Bistro Table</option>
+          <option value="tilda_banquette_right">Tilda Corner Banquette (Right)</option>
+          <option value="tilda_banquette_left">Tilda Corner Banquette (Left)</option>
+          <option value="craig_dining_chair">Craig Expressed Wood Dining Chair</option>
+        </select>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="submit" value="create" class="primary">Add to Living Room</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dimensions-dialog" closedby="any" aria-labelledby="dimensions-title">
+    <h2 id="dimensions-title">Verified Room Dimensions (12.5 px/ft CAD Scale)</h2>
+    <p style="margin:0;color:var(--text-muted);font-size:12px;">
+      Every 3D wall and fixture is extracted directly from <code>floorplan.jpeg</code>. Net walkable floor area: <strong id="dims-net-area">2,113.8</strong> sq ft (Gross: <strong id="dims-gross-area">2,472.9</strong> sq ft).
+    </p>
+    <table class="dims-table">
+      <thead>
+        <tr>
+          <th>Space</th>
+          <th>Printed Plan</th>
+          <th>3D Clear Span</th>
+          <th>Area</th>
+        </tr>
+      </thead>
+      <tbody id="dims-table-body"></tbody>
+    </table>
+    <form method="dialog" class="dialog-actions">
+      <button type="submit" value="close" class="primary" autofocus>Close</button>
+    </form>
+  </dialog>
+
+  <dialog id="layouts-dialog" closedby="any" aria-labelledby="layouts-title">
+    <h2 id="layouts-title">Save &amp; Load Furniture Layouts</h2>
+    <div class="autosave-box">
+      <div id="dialog-autosave-info">Auto-save is active in this browser.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button type="button" id="btn-cloud-sync-now">Sync Now</button>
+        <button type="button" id="btn-toggle-cloud-sync">Cloud Sync: On</button>
+        <button type="button" id="btn-link-existing-file">Link Existing File (.json)</button>
+        <button type="button" id="btn-link-autosave-file">New Sync File (.json)</button>
+        <button type="button" id="btn-reconnect-file-dialog" style="display:none;">Reconnect File</button>
+        <button type="button" id="btn-unlink-autosave-file" style="display:none;">Unlink File</button>
+      </div>
+    </div>
+    <form id="save-layout-form" class="layout-save-row">
+      <input type="text" id="layout-save-name" placeholder="Layout name (e.g. Dining Banquette Option A)" style="flex:1;" autofocus />
+      <button type="submit" class="primary">Save Current</button>
+    </form>
+    <div id="layouts-status" class="layout-status" role="status" aria-live="polite"></div>
+    <div>
+      <div class="section-title">
+        <span>Saved Layouts (Browser)</span>
+        <span id="saved-layouts-count">0</span>
+      </div>
+      <div id="saved-layouts-list" class="saved-layouts-list"></div>
+    </div>
+    <div>
+      <div class="section-title">File &amp; Clipboard Transfer</div>
+      <div class="layout-io-row">
+        <button type="button" id="btn-dialog-save-file">Save File (.json)</button>
+        <button type="button" id="btn-dialog-load-file">Load File (.json)</button>
+        <button type="button" id="btn-copy-json">Copy JSON</button>
+      </div>
+      <details id="paste-json-details" class="paste-box" style="margin-top:8px;">
+        <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;">Paste &amp; Load JSON</summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+          <textarea id="paste-json-input" rows="5" placeholder='Paste saved layout JSON ({"items":[...]} or [...])'></textarea>
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" id="btn-paste-load-json" class="primary">Load Pasted JSON</button>
+          </div>
+        </div>
+      </details>
+    </div>
+    <form method="dialog" class="dialog-actions">
+      <button type="submit" value="close">Close</button>
+    </form>
+  </dialog>
+
+  <div id="live-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script id="embedded-spec" type="application/json">__EMBED_SPEC__</script>
+  <script id="embedded-glb" type="text/plain">__EMBED_GLB__</script>
+  <script id="embedded-floorplan" type="text/plain">__EMBED_FLOORPLAN__</script>
+  <script>__EMBED_BUNDLE__</script>
+</body>
+</html>
