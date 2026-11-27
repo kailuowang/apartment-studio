@@ -107,7 +107,7 @@ const CATALOG = [
   { id: 'loveseat', cat: 'Living', name: 'Loveseat', style: 'sofa', w: 66, d: 36, h: 33, color: '#64748b' },
   { id: 'lounge_chair', cat: 'Living', name: 'Lounge Chair', style: 'armchair', w: 34, d: 36, h: 32, color: '#8b5e3c' },
   { id: 'coffee_rect', cat: 'Living', name: 'Coffee Table', style: 'table', w: 48, d: 26, h: 17, color: '#a16207' },
-  { id: 'coffee_round', cat: 'Living', name: 'Round Coffee Table', style: 'round_table', w: 36, d: 36, h: 16, color: '#8b5e3c' },
+  { id: 'coffee_round', cat: 'Living', name: 'Round / Oval Coffee Table', style: 'round_table', w: 36, d: 36, h: 16, color: '#8b5e3c' },
   { id: 'coffee_marble', cat: 'Living', name: 'Marble Top Coffee Table (48"×30")', style: 'marble_coffee_table', w: 48, d: 30, h: 16.5, color: '#e2e8f0' },
   { id: 'media_tv', cat: 'Living', name: 'TV Console (82") + 82" TV', style: 'console_tv', w: 82, d: 16, h: 67, color: '#1e293b' },
   { id: 'standing_speaker', cat: 'Living', name: 'Standing Speaker', style: 'floor_speaker', w: 10, d: 14, h: 42, color: '#1e293b' },
@@ -828,13 +828,37 @@ function buildFurnitureVisual(item) {
     }
 
     case 'round_table': {
-      const r = Math.min(w, d) * 0.5;
+      const rx = w * 0.5;
+      const rz = d * 0.5;
+      const rMin = Math.min(rx, rz);
+      const rMax = Math.max(rx, rz);
       const topT = Math.min(0.05, h * 0.18);
       const baseH = Math.min(0.03, h * 0.16);
       const pedH = Math.max(0.003, h - topT - baseH - 0.006);
-      addPart(g, new THREE.CylinderGeometry(r, r, topT, 28), mainMat, 0, h - topT * 0.5, 0);
-      addPart(g, new THREE.CylinderGeometry(r * 0.12, r * 0.15, pedH, 16), darkMat, 0, 0.004 + baseH + pedH * 0.5, 0);
-      addPart(g, new THREE.CylinderGeometry(r * 0.55, r * 0.6, baseH, 24), darkMat, 0, 0.002 + baseH * 0.5, 0);
+      const pedY = 0.004 + baseH + pedH * 0.5;
+
+      const topGeo = new THREE.CylinderGeometry(1, 1, topT, 48);
+      topGeo.scale(rx, 1, rz);
+      addPart(g, topGeo, mainMat, 0, h - topT * 0.5, 0);
+
+      const baseGeo = new THREE.CylinderGeometry(0.55, 0.6, baseH, 36);
+      baseGeo.scale(rx, 1, rz);
+      addPart(g, baseGeo, darkMat, 0, 0.002 + baseH * 0.5, 0);
+
+      if (rMax / Math.max(1e-4, rMin) > 1.35) {
+        const colRTop = rMin * 0.11;
+        const colRBot = rMin * 0.14;
+        const offset = Math.max(0, Math.min((rMax - rMin) * 0.65, 0.55 * rMax - colRBot - 0.005));
+        for (const s of [-1, 1]) {
+          const px = w >= d ? s * offset : 0;
+          const pz = d > w ? s * offset : 0;
+          addPart(g, new THREE.CylinderGeometry(colRTop, colRBot, pedH, 20), darkMat, px, pedY, pz);
+        }
+      } else {
+        const pedGeo = new THREE.CylinderGeometry(0.8, 1, pedH, 24);
+        pedGeo.scale(Math.min(rx * 0.15, rMin * 0.25), 1, Math.min(rz * 0.15, rMin * 0.25));
+        addPart(g, pedGeo, darkMat, 0, pedY, 0);
+      }
       break;
     }
 
