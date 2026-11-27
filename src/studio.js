@@ -3086,8 +3086,22 @@ scene.add(measureGroup);
 const measurePins = []; // { a: Vector3, b: Vector3, el: HTMLElement }
 let previewLine = null;
 
+let selectMode = false;
+const btnSelectMode = document.getElementById('btn-select-mode');
+
+function setSelectMode(on) {
+  selectMode = Boolean(on);
+  if (selectMode && measureMode) setMeasureMode(false);
+  if (btnSelectMode) {
+    btnSelectMode.classList.toggle('active', selectMode);
+    btnSelectMode.setAttribute('aria-pressed', selectMode ? 'true' : 'false');
+  }
+  renderer.domElement.style.cursor = measureMode ? 'crosshair' : 'default';
+}
+
 function setMeasureMode(on) {
   measureMode = on;
+  if (measureMode && selectMode) setSelectMode(false);
   measureStart = null;
   if (previewLine) {
     measureGroup.remove(previewLine);
@@ -3220,6 +3234,33 @@ function pickFurnitureAt(clientX, clientY) {
   return placedItems.find((i) => i.uid === uid) || null;
 }
 
+function pickFurnitureWithTouchTolerance(clientX, clientY, radiusPx = 12) {
+  const exact = pickFurnitureAt(clientX, clientY);
+  if (exact || radiusPx <= 0) return exact;
+  const rInner = Math.round(radiusPx * 0.55);
+  const rDiag = Math.round(radiusPx * 0.7071);
+  const offsets = [
+    [rInner, 0], [-rInner, 0], [0, rInner], [0, -rInner],
+    [radiusPx, 0], [-radiusPx, 0], [0, radiusPx], [0, -radiusPx],
+    [rDiag, rDiag], [-rDiag, rDiag], [rDiag, -rDiag], [-rDiag, -rDiag],
+  ];
+  for (const [dx, dy] of offsets) {
+    const hit = pickFurnitureAt(clientX + dx, clientY + dy);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function isTouchLikePointer(pointerType) {
+  return pointerType === 'touch' || pointerType === 'pen';
+}
+
+function pickFurnitureForPointer(clientX, clientY, pointerType) {
+  return isTouchLikePointer(pointerType)
+    ? pickFurnitureWithTouchTolerance(clientX, clientY, 12)
+    : pickFurnitureAt(clientX, clientY);
+}
+
 function snapPosition(item, rawX, rawZ) {
   let x = rawX;
   let z = rawZ;
@@ -3262,10 +3303,67 @@ function snapPosition(item, rawX, rawZ) {
   return { x, z };
 }
 
+const TOUCH_DOUBLE_TAP_MS = 420;
+const TOUCH_DOUBLE_TAP_PX = 44;
+const TOUCH_HOLD_MS = 450;
+const TOUCH_MOVE_TOL_PX = 12;
+
+let draggingPointerId = null;
+const activeTouchPointers = new Map();
+let pendingTouchGesture = null;
+let lastTouchTap = null;
+let emptyFloorTap = null;
+let suppressNextDblClickUntil = 0;
+
+function clearPendingTouchGesture() {
+  if (!pendingTouchGesture) return;
+  if (pendingTouchGesture.longPressTimer) {
+    clearTimeout(pendingTouchGesture.longPressTimer);
+    pendingTouchGesture.longPressTimer = null;
+  }
+  pendingTouchGesture = null;
+}
+
+function invalidateTouchGestures() {
+  if (pendingTouchGesture) {
+    pendingTouchGesture.multiTouch = true;
+    if (pendingTouchGesture.longPressTimer) {
+      clearTimeout(pendingTouchGesture.longPressTimer);
+      pendingTouchGesture.longPressTimer = null;
+    }
+  }
+  if (emptyFloorTap) emptyFloorTap.cancelled = true;
+  lastTouchTap = null;
+}
+
+function startDraggingItem(item, pointerId, clientX, clientY) {
+  if (!item) return false;
+  const floorHit = getFloorHit(clientX, clientY);
+  if (!floorHit) return false;
+  dragStartSnapshot = captureHistoryState();
+  dragStartPos = { x: item.x, z: item.z };
+  draggingItem = item;
+  draggingPointerId = pointerId;
+  dragOffset.set(item.x - floorHit.x, 0, item.z - floorHit.z);
+  controls.enabled = false;
+  renderer.domElement.style.cursor = 'grabbing';
+  try { renderer.domElement.setPointerCapture(pointerId); } catch (_) {}
+  return true;
+}
+
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  const touchLike = isTouchLikePointer(e.pointerType);
+  if (e.button !== 0 && !touchLike) return;
+
+  if (touchLike) {
+    activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activeTouchPointers.size > 1) {
+      invalidateTouchGestures();
+    }
+  }
 
   if (measureMode) {
+    if (touchLike && activeTouchPointers.size > 1) return;
     const hit = getFloorHit(e.clientX, e.clientY);
     if (!hit) return;
     hit.y = 0.032;
@@ -3290,24 +3388,82 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  if (selectedUid) {
-    const hitItem = pickFurnitureAt(e.clientX, e.clientY);
-    if (hitItem && hitItem.uid === selectedUid) {
-      const floorHit = getFloorHit(e.clientX, e.clientY);
-      if (floorHit) {
-        dragStartSnapshot = captureHistoryState();
-        dragStartPos = { x: hitItem.x, z: hitItem.z };
-        draggingItem = hitItem;
-        dragOffset.set(hitItem.x - floorHit.x, 0, hitItem.z - floorHit.z);
-        controls.enabled = false;
-        renderer.domElement.style.cursor = 'grabbing';
-        renderer.domElement.setPointerCapture(e.pointerId);
+  if (touchLike && activeTouchPointers.size > 1) return;
+
+  const hitItem = pickFurnitureForPointer(e.clientX, e.clientY, e.pointerType);
+
+  if (selectMode) {
+    clearPendingTouchGesture();
+    if (hitItem) {
+      emptyFloorTap = null;
+      selectItem(hitItem.uid);
+      if (!startDraggingItem(hitItem, e.pointerId, e.clientX, e.clientY)) {
+        renderer.domElement.style.cursor = 'grab';
       }
+    } else {
+      emptyFloorTap = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTime: performance.now(),
+        cancelled: false,
+      };
     }
+    return;
+  }
+
+  if (selectedUid && hitItem && hitItem.uid === selectedUid) {
+    clearPendingTouchGesture();
+    startDraggingItem(hitItem, e.pointerId, e.clientX, e.clientY);
+    return;
+  }
+
+  if (touchLike && activeTouchPointers.size === 1) {
+    clearPendingTouchGesture();
+    const gesture = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      curX: e.clientX,
+      curY: e.clientY,
+      pointerType: e.pointerType,
+      startTime: performance.now(),
+      moved: false,
+      multiTouch: false,
+      longPressTriggered: false,
+      longPressTimer: null,
+    };
+    if (hitItem) {
+      gesture.longPressTimer = setTimeout(() => {
+        if (
+          pendingTouchGesture !== gesture ||
+          gesture.moved ||
+          gesture.multiTouch ||
+          activeTouchPointers.size !== 1 ||
+          measureMode ||
+          selectMode ||
+          activeCamMode === 'walk'
+        ) return;
+        gesture.longPressTimer = null;
+        gesture.longPressTriggered = true;
+        lastTouchTap = null;
+        const targetItem = pickFurnitureForPointer(gesture.curX, gesture.curY, gesture.pointerType) || hitItem;
+        if (!targetItem) return;
+        selectItem(targetItem.uid);
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          try { navigator.vibrate(15); } catch (_) {}
+        }
+        if (!startDraggingItem(targetItem, gesture.pointerId, gesture.curX, gesture.curY)) {
+          renderer.domElement.style.cursor = 'grab';
+        }
+      }, TOUCH_HOLD_MS);
+    }
+    pendingTouchGesture = gesture;
   }
 });
 
 renderer.domElement.addEventListener('dblclick', (e) => {
+  if (performance.now() < suppressNextDblClickUntil) return;
   if (e.button !== 0 || measureMode || activeCamMode === 'walk') return;
   const item = pickFurnitureAt(e.clientX, e.clientY);
   selectItem(item ? item.uid : null);
@@ -3315,6 +3471,30 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
+  if (isTouchLikePointer(e.pointerType) && activeTouchPointers.has(e.pointerId)) {
+    activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+
+  if (emptyFloorTap && e.pointerId === emptyFloorTap.pointerId && !emptyFloorTap.cancelled) {
+    if (Math.hypot(e.clientX - emptyFloorTap.startX, e.clientY - emptyFloorTap.startY) > 10) {
+      emptyFloorTap.cancelled = true;
+    }
+  }
+
+  if (pendingTouchGesture && e.pointerId === pendingTouchGesture.pointerId) {
+    pendingTouchGesture.curX = e.clientX;
+    pendingTouchGesture.curY = e.clientY;
+    if (
+      Math.hypot(e.clientX - pendingTouchGesture.startX, e.clientY - pendingTouchGesture.startY) > TOUCH_MOVE_TOL_PX
+    ) {
+      pendingTouchGesture.moved = true;
+      if (pendingTouchGesture.longPressTimer) {
+        clearTimeout(pendingTouchGesture.longPressTimer);
+        pendingTouchGesture.longPressTimer = null;
+      }
+    }
+  }
+
   if (measureMode && measureStart && previewLine) {
     const hit = getFloorHit(e.clientX, e.clientY);
     if (hit) {
@@ -3340,13 +3520,22 @@ renderer.domElement.addEventListener('pointermove', (e) => {
       if (sel && sel.group) {
         setPointerRay(e.clientX, e.clientY);
         const selHit = raycaster.intersectObject(sel.group, true).length > 0;
-        renderer.domElement.style.cursor = selHit ? 'grab' : 'default';
+        if (selHit) {
+          renderer.domElement.style.cursor = 'grab';
+        } else if (selectMode && pickFurnitureAt(e.clientX, e.clientY)) {
+          renderer.domElement.style.cursor = 'pointer';
+        } else {
+          renderer.domElement.style.cursor = 'default';
+        }
+      } else if (selectMode && pickFurnitureAt(e.clientX, e.clientY)) {
+        renderer.domElement.style.cursor = 'pointer';
       } else {
         renderer.domElement.style.cursor = 'default';
       }
     }
     return;
   }
+  if (draggingPointerId !== null && e.pointerId !== draggingPointerId) return;
   const hit = getFloorHit(e.clientX, e.clientY);
   if (!hit) return;
   const snapped = snapPosition(draggingItem, hit.x + dragOffset.x, hit.z + dragOffset.z);
@@ -3362,10 +3551,12 @@ function finishDragging(pointerId) {
   const movedItem = draggingItem;
   const snap = dragStartSnapshot;
   const startPos = dragStartPos;
+  const captureId = pointerId !== undefined ? pointerId : draggingPointerId;
   draggingItem = null;
+  draggingPointerId = null;
   dragStartSnapshot = null;
   dragStartPos = null;
-  controls.enabled = true;
+  controls.enabled = activeCamMode !== 'walk';
   renderer.domElement.style.cursor = measureMode ? 'crosshair' : 'default';
   if (
     snap &&
@@ -3375,13 +3566,16 @@ function finishDragging(pointerId) {
     commitUndoSnapshot(snap, `Move ${movedItem.name}`);
     saveToLocalStorage();
   }
-  if (pointerId !== undefined) {
-    try { renderer.domElement.releasePointerCapture(pointerId); } catch (_) {}
+  if (captureId !== null && captureId !== undefined) {
+    try { renderer.domElement.releasePointerCapture(captureId); } catch (_) {}
   }
   flushPendingRemoteSync();
 }
 
 renderer.domElement.addEventListener('pointerup', (e) => {
+  const touchLike = isTouchLikePointer(e.pointerType);
+  if (touchLike) activeTouchPointers.delete(e.pointerId);
+
   if (walkState.looking) {
     walkState.looking = false;
     if (Math.hypot(e.clientX - walkState.downX, e.clientY - walkState.downY) < 5) {
@@ -3392,12 +3586,88 @@ renderer.domElement.addEventListener('pointerup', (e) => {
       }
     }
   }
-  if (draggingItem) {
+
+  if (draggingItem && (draggingPointerId === null || e.pointerId === draggingPointerId)) {
+    finishDragging(e.pointerId);
+    if (pendingTouchGesture && pendingTouchGesture.pointerId === e.pointerId) {
+      clearPendingTouchGesture();
+    }
+    if (emptyFloorTap && emptyFloorTap.pointerId === e.pointerId) {
+      emptyFloorTap = null;
+    }
+    return;
+  }
+
+  if (emptyFloorTap && e.pointerId === emptyFloorTap.pointerId) {
+    const tap = emptyFloorTap;
+    emptyFloorTap = null;
+    const isTap =
+      !tap.cancelled &&
+      Math.hypot(e.clientX - tap.startX, e.clientY - tap.startY) <= 10 &&
+      (performance.now() - tap.startTime) < TOUCH_DOUBLE_TAP_MS;
+    if (isTap && selectMode && !measureMode && activeCamMode !== 'walk') {
+      selectItem(null);
+      renderer.domElement.style.cursor = 'default';
+      if (touchLike) suppressNextDblClickUntil = performance.now() + 500;
+      return;
+    }
+  }
+
+  if (pendingTouchGesture && e.pointerId === pendingTouchGesture.pointerId) {
+    const g = pendingTouchGesture;
+    clearPendingTouchGesture();
+    const now = performance.now();
+    const isTap =
+      !g.longPressTriggered &&
+      !g.moved &&
+      !g.multiTouch &&
+      !measureMode &&
+      activeCamMode !== 'walk' &&
+      Math.hypot(e.clientX - g.startX, e.clientY - g.startY) <= TOUCH_MOVE_TOL_PX &&
+      (now - g.startTime) < TOUCH_DOUBLE_TAP_MS;
+
+    if (isTap) {
+      if (
+        lastTouchTap &&
+        (now - lastTouchTap.time) <= TOUCH_DOUBLE_TAP_MS &&
+        Math.hypot(e.clientX - lastTouchTap.x, e.clientY - lastTouchTap.y) <= TOUCH_DOUBLE_TAP_PX
+      ) {
+        lastTouchTap = null;
+        const item = pickFurnitureForPointer(e.clientX, e.clientY, e.pointerType);
+        selectItem(item ? item.uid : null);
+        renderer.domElement.style.cursor = item ? 'grab' : 'default';
+        suppressNextDblClickUntil = now + 500;
+      } else {
+        lastTouchTap = { time: now, x: e.clientX, y: e.clientY };
+      }
+    } else {
+      lastTouchTap = null;
+    }
+  }
+});
+
+renderer.domElement.addEventListener('pointercancel', (e) => {
+  if (isTouchLikePointer(e.pointerType)) activeTouchPointers.delete(e.pointerId);
+  invalidateTouchGestures();
+  clearPendingTouchGesture();
+  emptyFloorTap = null;
+  if (draggingItem && (draggingPointerId === null || e.pointerId === draggingPointerId)) {
     finishDragging(e.pointerId);
   }
 });
-renderer.domElement.addEventListener('pointercancel', (e) => {
-  finishDragging(e.pointerId);
+
+renderer.domElement.addEventListener('lostpointercapture', (e) => {
+  if (isTouchLikePointer(e.pointerType)) activeTouchPointers.delete(e.pointerId);
+  if (draggingItem && (draggingPointerId === null || e.pointerId === draggingPointerId)) {
+    finishDragging(e.pointerId);
+  }
+});
+
+window.addEventListener('pointerup', (e) => {
+  if (isTouchLikePointer(e.pointerType)) activeTouchPointers.delete(e.pointerId);
+});
+window.addEventListener('pointercancel', (e) => {
+  if (isTouchLikePointer(e.pointerType)) activeTouchPointers.delete(e.pointerId);
 });
 
 // Keyboard shortcuts
@@ -3427,6 +3697,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'm' || e.key === 'M') {
     setMeasureMode(!measureMode);
+  } else if ((e.key === 's' || e.key === 'S') && activeCamMode !== 'walk') {
+    setSelectMode(!selectMode);
   } else if (e.key === '[') {
     e.preventDefault();
     toggleLeftPanel();
@@ -3440,6 +3712,8 @@ window.addEventListener('keydown', (e) => {
     else if (selectedUid) {
       selectItem(null);
       renderer.domElement.style.cursor = 'default';
+    } else if (selectMode) {
+      setSelectMode(false);
     }
   } else if ((e.key === 'r' || e.key === 'R') && selectedUid) {
     rotateSelected(90);
@@ -3958,6 +4232,9 @@ document.getElementById('btn-clear-all').addEventListener('click', () => {
   loadLayoutArray([]);
   pushCloudLayoutNow({ forceSnapshot: true });
 });
+if (btnSelectMode) {
+  btnSelectMode.addEventListener('click', () => setSelectMode(!selectMode));
+}
 document.getElementById('btn-measure').addEventListener('click', () => setMeasureMode(!measureMode));
 document.getElementById('btn-clear-measure').addEventListener('click', () => {
   for (const p of measurePins) {
