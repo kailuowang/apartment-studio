@@ -21,6 +21,23 @@ const SYNC_CHANNEL_NAME = `apt_studio_sync_v1${ROOM_KEY_SUFFIX}`;
 const IDB_NAME = 'apt_studio_handles_v1';
 const IDB_STORE = 'handles';
 const IDB_FILE_KEY = 'syncFile';
+const UI_PREFS_KEY = 'apt_studio_ui_prefs_v1';
+
+function loadUiPrefs() {
+  const defaults = { showLabels: false, showLeft: true, showRight: true };
+  try {
+    const raw = localStorage.getItem(UI_PREFS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    return {
+      showLabels: parsed?.showLabels === true,
+      showLeft: parsed?.showLeft !== false,
+      showRight: parsed?.showRight !== false,
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Embedded payloads
@@ -3077,13 +3094,34 @@ function updateMeasurePinTexts() {
 // ---------------------------------------------------------------------------
 // Room Labels Overlay Projection
 // ---------------------------------------------------------------------------
-let showLabels = true;
+const uiPrefs = loadUiPrefs();
+let showLabels = uiPrefs.showLabels;
+let showLeftPanel = uiPrefs.showLeft;
+let showRightPanel = uiPrefs.showRight;
+
+function saveUiPrefs() {
+  try {
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
+      showLabels,
+      showLeft: showLeftPanel,
+      showRight: showRightPanel,
+    }));
+  } catch (_) {}
+}
+
 const roomLabelEls = [];
 for (const room of spec.rooms) {
   const el = document.createElement('div');
   el.className = 'room-label';
   const dimText = room.printed_label !== '—' ? room.printed_label : room.measured_str;
-  el.innerHTML = `<div class="rl-name">${room.name}</div><div class="rl-dims">${dimText}</div>`;
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'rl-name';
+  nameDiv.textContent = room.name;
+  const dimDiv = document.createElement('div');
+  dimDiv.className = 'rl-dims';
+  dimDiv.textContent = dimText;
+  el.appendChild(nameDiv);
+  el.appendChild(dimDiv);
   labelsLayer.appendChild(el);
   roomLabelEls.push({ room, el, pos: new THREE.Vector3(room.center_m[0], 0.05, room.center_m[2]) });
 }
@@ -3365,6 +3403,14 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'm' || e.key === 'M') {
     setMeasureMode(!measureMode);
+  } else if (e.key === '[') {
+    e.preventDefault();
+    toggleLeftPanel();
+  } else if (e.key === ']') {
+    e.preventDefault();
+    toggleRightPanel();
+  } else if (e.key === 'l' || e.key === 'L') {
+    setLabelsVisible(!showLabels);
   } else if (e.key === 'Escape') {
     if (measureMode) setMeasureMode(false);
     else if (selectedUid) {
@@ -3773,9 +3819,74 @@ document.getElementById('overlay-slider').addEventListener('input', (e) => {
 document.getElementById('chk-swings').addEventListener('change', (e) => {
   swingGroup.visible = e.target.checked;
 });
-document.getElementById('chk-labels').addEventListener('change', (e) => {
-  showLabels = e.target.checked;
-});
+const appEl = document.getElementById('app');
+const leftPanelEl = document.getElementById('left-panel');
+const rightPanelEl = document.getElementById('right-panel');
+const btnToggleLeft = document.getElementById('btn-toggle-left');
+const btnToggleRight = document.getElementById('btn-toggle-right');
+const edgeToggleLeft = document.getElementById('edge-toggle-left');
+const edgeToggleRight = document.getElementById('edge-toggle-right');
+const btnToggleLabels = document.getElementById('btn-toggle-labels');
+const chkLabelsEl = document.getElementById('chk-labels');
+
+function setLabelsVisible(visible, persist = true) {
+  showLabels = Boolean(visible);
+  if (chkLabelsEl) chkLabelsEl.checked = showLabels;
+  if (btnToggleLabels) {
+    btnToggleLabels.classList.toggle('active', showLabels);
+    btnToggleLabels.setAttribute('aria-pressed', showLabels ? 'true' : 'false');
+  }
+  updateProjectedLabels();
+  if (persist) saveUiPrefs();
+}
+
+function syncPanelToggleUi(btn, edgeBtn, visible, openGlyph, closedGlyph) {
+  if (btn) {
+    btn.classList.toggle('active', visible);
+    btn.setAttribute('aria-expanded', visible ? 'true' : 'false');
+  }
+  if (edgeBtn) {
+    edgeBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
+    edgeBtn.textContent = visible ? openGlyph : closedGlyph;
+  }
+}
+
+function applyPanelVisibility(persist = true) {
+  if (appEl) {
+    appEl.classList.toggle('hide-left', !showLeftPanel);
+    appEl.classList.toggle('hide-right', !showRightPanel);
+  }
+  if (leftPanelEl) leftPanelEl.hidden = !showLeftPanel;
+  if (rightPanelEl) rightPanelEl.hidden = !showRightPanel;
+
+  syncPanelToggleUi(btnToggleLeft, edgeToggleLeft, showLeftPanel, '‹', '›');
+  syncPanelToggleUi(btnToggleRight, edgeToggleRight, showRightPanel, '›', '‹');
+
+  onResize();
+  updateProjectedLabels();
+  requestAnimationFrame(() => {
+    onResize();
+    updateProjectedLabels();
+  });
+  if (persist) saveUiPrefs();
+}
+
+function toggleLeftPanel() {
+  showLeftPanel = !showLeftPanel;
+  applyPanelVisibility(true);
+}
+
+function toggleRightPanel() {
+  showRightPanel = !showRightPanel;
+  applyPanelVisibility(true);
+}
+
+btnToggleLeft?.addEventListener('click', toggleLeftPanel);
+edgeToggleLeft?.addEventListener('click', toggleLeftPanel);
+btnToggleRight?.addEventListener('click', toggleRightPanel);
+edgeToggleRight?.addEventListener('click', toggleRightPanel);
+btnToggleLabels?.addEventListener('click', () => setLabelsVisible(!showLabels));
+chkLabelsEl?.addEventListener('change', (e) => setLabelsVisible(e.target.checked));
 document.getElementById('chk-grid').addEventListener('change', (e) => {
   gridGroup.visible = e.target.checked;
 });
@@ -4577,6 +4688,12 @@ function onResize() {
   renderer.setSize(w, h);
 }
 window.addEventListener('resize', onResize);
+if (typeof ResizeObserver === 'function') {
+  new ResizeObserver(() => {
+    onResize();
+    updateProjectedLabels();
+  }).observe(canvasHost);
+}
 
 let lastTime = performance.now();
 function animate(now) {
@@ -4713,6 +4830,8 @@ if (restored) {
 }
 
 updateAutoSaveUI({ ok: lastAutoSaveOk, savedAt: lastAutoSaveIso, errorMsg: lastAutoSaveError });
+setLabelsVisible(showLabels, false);
+applyPanelVisibility(false);
 setupSameOriginTabSync();
 initStoredFileHandle();
 if (isCloudSyncActive()) {

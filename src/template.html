@@ -37,12 +37,16 @@
     }
 
     #app {
+      --left-col: 300px;
+      --right-col: 292px;
       display: grid;
-      grid-template-columns: 300px 1fr 292px;
-      grid-template-rows: auto 1fr;
+      grid-template-columns: var(--left-col) minmax(0, 1fr) var(--right-col);
+      grid-template-rows: auto minmax(0, 1fr);
       width: 100vw;
       height: 100vh;
     }
+    #app.hide-left { --left-col: 0px; }
+    #app.hide-right { --right-col: 0px; }
 
     /* Top Header Bar */
     header {
@@ -200,8 +204,9 @@
       flex-direction: column;
       gap: 14px;
     }
-    #left-panel { border-right: 1px solid var(--border); }
-    #right-panel { border-left: 1px solid var(--border); }
+    #left-panel { grid-column: 1; grid-row: 2; border-right: 1px solid var(--border); }
+    #right-panel { grid-column: 3; grid-row: 2; border-left: 1px solid var(--border); }
+    aside[hidden] { display: none !important; }
 
     .section-title {
       font-size: 11px;
@@ -282,11 +287,41 @@
 
     /* Viewport */
     #viewport-wrap {
+      grid-column: 2;
+      grid-row: 2;
       position: relative;
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
       overflow: hidden;
       background: radial-gradient(circle at 50% 35%, #172033 0%, #090e1a 100%);
+    }
+    .panel-edge-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 12;
+      min-inline-size: 24px;
+      min-block-size: 44px;
+      padding: 6px 4px;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      backdrop-filter: blur(8px);
+    }
+    .panel-edge-btn:hover {
+      background: rgba(30, 41, 59, 0.94);
+      border-color: var(--accent);
+    }
+    .panel-edge-btn.edge-left {
+      left: 8px;
+    }
+    .panel-edge-btn.edge-right {
+      right: 8px;
     }
     #canvas-host {
       width: 100%;
@@ -744,6 +779,9 @@
       </div>
 
       <div class="toolbar">
+        <button type="button" id="btn-toggle-left" class="active" aria-expanded="true" aria-controls="left-panel" title="Toggle Left Panel ([)">Left Panel</button>
+        <button type="button" id="btn-toggle-right" class="active" aria-expanded="true" aria-controls="right-panel" title="Toggle Right Panel (])">Right Panel</button>
+        <button type="button" id="btn-toggle-labels" aria-pressed="false" title="Toggle Room Labels (L)">Labels</button>
         <button type="button" id="btn-undo" aria-disabled="true" title="Undo (Ctrl/Cmd+Z)">Undo</button>
         <button type="button" id="btn-redo" aria-disabled="true" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>
         <button type="button" id="btn-preset-starter" title="Load sample collision-free arrangement">Starter Layout</button>
@@ -761,7 +799,7 @@
     </header>
 
     <!-- Left Panel: Camera + Architecture + Furniture Catalog -->
-    <aside id="left-panel">
+    <aside id="left-panel" aria-label="Camera and Furniture Library">
       <div class="card">
         <div class="section-title">Camera Views</div>
         <div class="camera-grid">
@@ -788,6 +826,8 @@
 
     <!-- Center 3D Canvas -->
     <main id="viewport-wrap">
+      <button type="button" id="edge-toggle-left" class="panel-edge-btn edge-left" aria-label="Left Panel" aria-expanded="true" aria-controls="left-panel" title="Toggle Left Panel ([)">‹</button>
+      <button type="button" id="edge-toggle-right" class="panel-edge-btn edge-right" aria-label="Right Panel" aria-expanded="true" aria-controls="right-panel" title="Toggle Right Panel (])">›</button>
       <div id="canvas-host"></div>
       <div id="labels-layer"></div>
       <div id="hud-walk">Walkthrough Mode (5'-6" eye height) · WASD / Arrows to move · Drag to look · Click floor to step</div>
@@ -797,7 +837,7 @@
     </main>
 
     <!-- Right Panel: Architecture Layers + Selected Item Inspector -->
-    <aside id="right-panel">
+    <aside id="right-panel" aria-label="Architecture and Inspector">
       <div class="card">
         <div class="section-title">
           <span>Architecture &amp; Scale</span>
@@ -835,7 +875,7 @@
         </div>
 
         <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-swings" checked /><span>Door Swing Arcs</span></label>
-        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-labels" checked /><span>Room Labels &amp; Sizes</span></label>
+        <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-labels" /><span>Room Labels &amp; Sizes</span></label>
         <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-grid" checked /><span>1-Foot Floor Grid</span></label>
         <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-fixtures" checked /><span>Kitchen &amp; Bath Fixtures</span></label>
         <label class="check-row"><input type="checkbox" class="visually-hidden" id="chk-doors" checked /><span>3D Doors</span></label>
